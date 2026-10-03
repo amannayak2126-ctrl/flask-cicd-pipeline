@@ -7,7 +7,7 @@ def test_home():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert response.data == b"Hello from my CI/CD pipeline!"
+    assert response.data == b"Hello from my CI/CD pipeline - Version 2!"
 
 
 def test_health():
