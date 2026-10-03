@@ -28,23 +28,21 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
-        run: python -m pytest
+        run: |
+          python -m pytest
 
       - name: Build Docker image
         run: |
-          docker build \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-pipeline:latest \
-            .
+          docker build -t amannayak2126/flask-cicd-pipeline:latest .
 
       - name: Log in to Docker Hub
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           echo "$DOCKERHUB_TOKEN" | docker login \
-            -u "${{ secrets.DOCKERHUB_USERNAME }}" \
+            -u amannayak2126 \
             --password-stdin
 
       - name: Push Docker image
         run: |
-          docker push \
-            ${{ secrets.DOCKERHUB_USERNAME }}/flask-cicd-pipeline:latest
+          docker push amannayak2126/flask-cicd-pipeline:latest
