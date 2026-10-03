@@ -81,7 +81,7 @@ jobs:
         run: |
           aws sts get-caller-identity
 
-      # 12. Deploy exact version to EC2 using SSM
+      # 12. Deploy with automatic rollback
       - name: Deploy to EC2 using SSM
         env:
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
@@ -89,15 +89,21 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Flask CI/CD version ${GITHUB_SHA::7}" \
+            --comment "Deploy Flask CI/CD version ${GITHUB_SHA::7} with rollback" \
             --timeout-seconds 300 \
             --parameters 'commands=[
-              "docker pull amannayak2126/flask-cicd-pipeline:'"${GITHUB_SHA::7}"'",
-              "docker stop flask-cicd-container || true",
-              "docker rm flask-cicd-container || true",
-              "docker run -d --name flask-cicd-container -p 5000:5000 --restart unless-stopped amannayak2126/flask-cicd-pipeline:'"${GITHUB_SHA::7}"'",
+              "set -e",
+              "IMAGE_NAME=amannayak2126/flask-cicd-pipeline",
+              "NEW_TAG='"${GITHUB_SHA::7}"'",
+              "CONTAINER_NAME=flask-cicd-container",
+              "PREVIOUS_IMAGE=$(docker inspect --format='\''{{.Config.Image}}'\'' $CONTAINER_NAME 2>/dev/null || true)",
+              "echo Previous image: $PREVIOUS_IMAGE",
+              "docker pull $IMAGE_NAME:$NEW_TAG",
+              "docker stop $CONTAINER_NAME || true",
+              "docker rm $CONTAINER_NAME || true",
+              "docker run -d --name $CONTAINER_NAME -p 5000:5000 --restart unless-stopped $IMAGE_NAME:$NEW_TAG",
               "sleep 5",
-              "docker exec flask-cicd-container python -c \"import urllib.request; r=urllib.request.urlopen('\''http://127.0.0.1:5000/health'\''); assert r.status == 200; print(r.read().decode())\""
+              "if docker exec $CONTAINER_NAME python -c \"import urllib.request; r=urllib.request.urlopen('\''http://127.0.0.1:5000/health'\''); assert r.status == 200; print(r.read().decode())\"; then echo Health check passed; else echo Health check failed; echo Rolling back; docker stop $CONTAINER_NAME || true; docker rm $CONTAINER_NAME || true; if [ -n \"$PREVIOUS_IMAGE\" ]; then docker run -d --name $CONTAINER_NAME -p 5000:5000 --restart unless-stopped $PREVIOUS_IMAGE; sleep 5; docker exec $CONTAINER_NAME python -c \"import urllib.request; r=urllib.request.urlopen('\''http://127.0.0.1:5000/health'\''); assert r.status == 200; print('\''Rollback health check passed'\'')\"; echo Rollback completed successfully; else echo No previous image available for rollback; fi; exit 1; fi"
             ]' \
             --query "Command.CommandId" \
             --output text)
@@ -132,7 +138,7 @@ jobs:
                 ;;
 
               Failed|TimedOut|Cancelled|Undeliverable|Terminated)
-                echo "Deployment or health check failed!"
+                echo "Deployment failed. Rollback may have been performed."
 
                 echo "----- STDOUT -----"
 
